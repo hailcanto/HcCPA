@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/thinking"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
 )
@@ -259,7 +260,9 @@ func (s *RoundRobinSelector) Pick(ctx context.Context, provider, model string, o
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("[RoundRobinSelector] Pick called: provider=%s, model=%s, available=%d", provider, model, len(available))
 	available = filterByAuthFileBinding(ctx, available)
+	log.Infof("[RoundRobinSelector] After filterByAuthFileBinding: available=%d", len(available))
 	available = preferCodexWebsocketAuths(ctx, provider, available)
 	key := provider + ":" + canonicalModelKey(model)
 	s.mu.Lock()
@@ -359,7 +362,9 @@ func (s *FillFirstSelector) Pick(ctx context.Context, provider, model string, op
 	if err != nil {
 		return nil, err
 	}
+	log.Infof("[FillFirstSelector] Pick called: provider=%s, model=%s, available=%d", provider, model, len(available))
 	available = filterByAuthFileBinding(ctx, available)
+	log.Infof("[FillFirstSelector] After filterByAuthFileBinding: available=%d", len(available))
 	available = preferCodexWebsocketAuths(ctx, provider, available)
 	return available[0], nil
 }
