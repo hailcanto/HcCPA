@@ -533,6 +533,7 @@ func buildScheduledAuthMeta(auth *Auth) *scheduledAuthMeta {
 	if auth.Attributes != nil {
 		virtualParent = strings.TrimSpace(auth.Attributes["gemini_virtual_parent"])
 	}
+	log.Debugf("[Scheduler] buildScheduledAuthMeta: auth.ID=%s, auth.FileName=%s", auth.ID, auth.FileName)
 	return &scheduledAuthMeta{
 		auth:              auth,
 		providerKey:       providerKey,
