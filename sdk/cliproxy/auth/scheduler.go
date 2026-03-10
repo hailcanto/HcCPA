@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
 )
@@ -190,6 +191,7 @@ func (s *authScheduler) pickSingle(ctx context.Context, provider, model string, 
 	if shard == nil {
 		return nil, &Error{Code: "auth_not_found", Message: "no auth available"}
 	}
+	allowedAuthFiles := extractAuthFileBindings(ctx)
 	predicate := func(entry *scheduledAuth) bool {
 		if entry == nil || entry.auth == nil {
 			return false
@@ -199,6 +201,13 @@ func (s *authScheduler) pickSingle(ctx context.Context, provider, model string, 
 		}
 		if len(tried) > 0 {
 			if _, ok := tried[entry.auth.ID]; ok {
+				return false
+			}
+		}
+		// Apply auth file binding filter
+		if allowedAuthFiles != nil {
+			if _, allowed := allowedAuthFiles[entry.auth.FileName]; !allowed {
+				log.Debugf("[Scheduler] Auth %s (file=%s) filtered by binding in pickSingle", entry.auth.ID, entry.auth.FileName)
 				return false
 			}
 		}
@@ -234,6 +243,7 @@ func (s *authScheduler) pickMixed(ctx context.Context, providers []string, model
 			return nil, "", &Error{Code: "auth_not_found", Message: "no auth available"}
 		}
 		shard := providerState.ensureModelLocked(modelKey, time.Now())
+		allowedAuthFiles := extractAuthFileBindings(ctx)
 		predicate := func(entry *scheduledAuth) bool {
 			if entry == nil || entry.auth == nil || entry.auth.ID != pinnedAuthID {
 				return false
@@ -242,7 +252,17 @@ func (s *authScheduler) pickMixed(ctx context.Context, providers []string, model
 				return true
 			}
 			_, ok := tried[pinnedAuthID]
-			return !ok
+			if ok {
+				return false
+			}
+			// Apply auth file binding filter
+			if allowedAuthFiles != nil {
+				if _, allowed := allowedAuthFiles[entry.auth.FileName]; !allowed {
+					log.Debugf("[Scheduler] Pinned auth %s (file=%s) filtered by binding", entry.auth.ID, entry.auth.FileName)
+					return false
+				}
+			}
+			return true
 		}
 		if picked := shard.pickReadyLocked(false, s.strategy, predicate); picked != nil {
 			return picked, providerKey, nil
@@ -251,6 +271,11 @@ func (s *authScheduler) pickMixed(ctx context.Context, providers []string, model
 	}
 
 	predicate := triedPredicate(tried)
+	allowedAuthFiles := extractAuthFileBindings(ctx)
+	if allowedAuthFiles != nil {
+		log.Infof("[Scheduler] Applying auth file binding filter with %d allowed files", len(allowedAuthFiles))
+		predicate = combinedPredicate(tried, allowedAuthFiles)
+	}
 	candidateShards := make([]*modelScheduler, len(normalized))
 	bestPriority := 0
 	hasCandidate := false
@@ -360,6 +385,65 @@ func triedPredicate(tried map[string]struct{}) func(*scheduledAuth) bool {
 		}
 		_, ok := tried[entry.auth.ID]
 		return !ok
+	}
+}
+
+// extractAuthFileBindings extracts the allowed auth file names from the context.
+// Returns nil if no binding restriction is present.
+func extractAuthFileBindings(ctx context.Context) map[string]struct{} {
+	ginVal := ctx.Value("gin")
+	if ginVal == nil {
+		return nil
+	}
+	getter, ok := ginVal.(contextGetter)
+	if !ok {
+		return nil
+	}
+	metaVal, exists := getter.Get("accessMetadata")
+	if !exists {
+		return nil
+	}
+	meta, ok := metaVal.(map[string]string)
+	if !ok {
+		return nil
+	}
+	raw := meta["auth_files"]
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	allowed := make(map[string]struct{}, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			allowed[trimmed] = struct{}{}
+		}
+	}
+	if len(allowed) == 0 {
+		return nil
+	}
+	log.Infof("[Scheduler] Auth file binding found: %v", allowed)
+	return allowed
+}
+
+// combinedPredicate combines the tried filter with auth file binding filter.
+func combinedPredicate(tried map[string]struct{}, allowedAuthFiles map[string]struct{}) func(*scheduledAuth) bool {
+	basePredicate := triedPredicate(tried)
+	if allowedAuthFiles == nil {
+		return basePredicate
+	}
+	return func(entry *scheduledAuth) bool {
+		if !basePredicate(entry) {
+			return false
+		}
+		if entry.auth == nil {
+			return false
+		}
+		_, ok := allowedAuthFiles[entry.auth.FileName]
+		if !ok {
+			log.Debugf("[Scheduler] Auth %s (file=%s) filtered out by binding", entry.auth.ID, entry.auth.FileName)
+		}
+		return ok
 	}
 }
 
