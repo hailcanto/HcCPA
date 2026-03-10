@@ -22,6 +22,7 @@ func Register(cfg *sdkconfig.SDKConfig) {
 		return
 	}
 
+	storeBindings(cfg.APIKeyBindings)
 	sdkaccess.RegisterProvider(
 		sdkaccess.AccessProviderTypeConfigAPIKey,
 		newProvider(sdkaccess.DefaultAccessProviderName, keys),
@@ -90,12 +91,14 @@ func (p *provider) Authenticate(_ context.Context, r *http.Request) (*sdkaccess.
 			continue
 		}
 		if _, ok := p.keys[candidate.value]; ok {
+			meta := map[string]string{
+				"source": candidate.source,
+			}
+			applyBindingsMetadata(meta, candidate.value)
 			return &sdkaccess.Result{
 				Provider:  p.Identifier(),
 				Principal: candidate.value,
-				Metadata: map[string]string{
-					"source": candidate.source,
-				},
+				Metadata:  meta,
 			}, nil
 		}
 	}

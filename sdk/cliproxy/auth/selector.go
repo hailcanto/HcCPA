@@ -259,6 +259,7 @@ func (s *RoundRobinSelector) Pick(ctx context.Context, provider, model string, o
 	if err != nil {
 		return nil, err
 	}
+	available = filterByAuthFileBinding(ctx, available)
 	available = preferCodexWebsocketAuths(ctx, provider, available)
 	key := provider + ":" + canonicalModelKey(model)
 	s.mu.Lock()
@@ -358,6 +359,7 @@ func (s *FillFirstSelector) Pick(ctx context.Context, provider, model string, op
 	if err != nil {
 		return nil, err
 	}
+	available = filterByAuthFileBinding(ctx, available)
 	available = preferCodexWebsocketAuths(ctx, provider, available)
 	return available[0], nil
 }
