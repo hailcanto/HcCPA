@@ -300,7 +300,7 @@ func (s *PostgresStore) List(ctx context.Context) ([]*cliproxyauth.Auth, error) 
 		auth := &cliproxyauth.Auth{
 			ID:               normalizeAuthID(id),
 			Provider:         provider,
-			FileName:         normalizeAuthID(id),
+			FileName:         filepath.Base(path),
 			Label:            labelFor(metadata),
 			Status:           cliproxyauth.StatusActive,
 			Attributes:       attr,
