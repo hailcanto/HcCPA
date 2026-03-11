@@ -306,6 +306,56 @@ func (h *Handler) GetAuthFileModels(c *gin.Context) {
 	c.JSON(200, gin.H{"models": result})
 }
 
+// GetAllAvailableModels returns all unique models supported by all auth files
+func (h *Handler) GetAllAvailableModels(c *gin.Context) {
+	reg := registry.GetGlobalRegistry()
+
+	// Get all auth files
+	var authIDs []string
+	if h.authManager != nil {
+		auths := h.authManager.List()
+		for _, auth := range auths {
+			authIDs = append(authIDs, auth.ID)
+		}
+	}
+
+	// Collect all unique models
+	modelMap := make(map[string]gin.H)
+	for _, authID := range authIDs {
+		models := reg.GetModelsForClient(authID)
+		for _, m := range models {
+			if _, exists := modelMap[m.ID]; !exists {
+				entry := gin.H{
+					"id": m.ID,
+				}
+				if m.DisplayName != "" {
+					entry["display_name"] = m.DisplayName
+				}
+				if m.Type != "" {
+					entry["type"] = m.Type
+				}
+				if m.OwnedBy != "" {
+					entry["owned_by"] = m.OwnedBy
+				}
+			modelMap[m.ID] = entry
+			}
+		}
+	}
+
+	// Convert map to sorted slice
+	result := make([]gin.H, 0, len(modelMap))
+	for _, entry := range modelMap {
+		result = append(result, entry)
+	}
+
+	// Sort by model ID
+	sort.Slice(result, func(i, j int) bool {
+		return result[i]["id"].(string) < result[j]["id"].(string)
+	})
+
+	c.JSON(200, gin.H{"models": result})
+}
+
 // List auth files from disk when the auth manager is unavailable.
 func (h *Handler) listAuthFilesFromDisk(c *gin.Context) {
 	entries, err := os.ReadDir(h.cfg.AuthDir)
